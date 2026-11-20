@@ -75,7 +75,7 @@ environ. Une station muette depuis plus de 3 heures n'est plus republiée comme 
 
 ### District
 
-Le nom est « ČHMÚ » suivi du nom du district.
+Le nom est « Alertes ČHMÚ » suivi du nom du district, pour le distinguer de la station de la même ville.
 
 | Fonctionnalité                   | Unité | Remarque                                                                  |
 | -------------------------------- | ----- | ------------------------------------------------------------------------- |

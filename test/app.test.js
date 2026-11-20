@@ -32,7 +32,11 @@ test('the house gives two devices: the nearest station, and the warnings of its 
     devices.map((device) => [device.name, device.external_id, device.model]),
     [
       ['ČHMÚ Neumětely', world.gladys.externalIds('station', STATION).device, 'Weather station'],
-      ['ČHMÚ Beroun', world.gladys.externalIds('district', DISTRICT).device, 'Weather warnings'],
+      [
+        'Alertes ČHMÚ, Beroun',
+        world.gladys.externalIds('district', DISTRICT).device,
+        'Weather warnings',
+      ],
     ],
   );
   assert.ok(devices.every((device) => device.features.every((f) => f.read_only)));
@@ -339,13 +343,13 @@ test('a station or a district alone, without any house', async () => {
   const station = await createWorld({ houses: [], config: { station_id: 'P1PKLE01' } });
   assert.deepEqual(
     station.gladys.fake.discoveredDevices.map((d) => d.name),
-    ['ČHMÚ Praha, Klementinum', 'ČHMÚ Hlavní město Praha'],
+    ['ČHMÚ Praha, Klementinum', 'Alertes ČHMÚ, Hlavní město Praha'],
   );
   await station.app.stop();
   const district = await createWorld({ houses: [], config: { district: 'beroun' } });
   assert.deepEqual(
     district.gladys.fake.discoveredDevices.map((d) => d.name),
-    ['ČHMÚ Beroun'],
+    ['Alertes ČHMÚ, Beroun'],
   );
   assert.equal(district.chmi.count('metadata'), 0, 'no station list needed');
   await district.app.stop();
@@ -357,7 +361,7 @@ test('typed coordinates take precedence over the house; a chosen district over t
   });
   assert.deepEqual(
     world.gladys.fake.discoveredDevices.map((d) => d.name),
-    ['ČHMÚ Praha, Klementinum', 'ČHMÚ Beroun'],
+    ['ČHMÚ Praha, Klementinum', 'Alertes ČHMÚ, Beroun'],
   );
   await world.app.stop();
 });
@@ -366,7 +370,9 @@ test('a configuration change re-reads everything for the new place', async () =>
   const world = await createWorld({ houses: [HOUSE, PRAGUE] });
   await world.gladys.fake.configUpdated({ house: 'praha' });
   await world.app.poller.idle;
-  assert.ok(world.gladys.fake.discoveredDevices.some((d) => d.name === 'ČHMÚ Hlavní město Praha'));
+  assert.ok(
+    world.gladys.fake.discoveredDevices.some((d) => d.name === 'Alertes ČHMÚ, Hlavní město Praha'),
+  );
   await world.app.stop();
 });
 

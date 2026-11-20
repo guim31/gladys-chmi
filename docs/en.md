@@ -74,7 +74,7 @@ station silent for more than 3 hours is not re-published as current.
 
 ### District
 
-The name is "ČHMÚ" followed by the district name.
+The name is "ČHMÚ warnings" followed by the district name, so that it differs from the station of the same town.
 
 | Feature                   | Unit   | Note                                                                 |
 | ------------------------- | ------ | -------------------------------------------------------------------- |

@@ -64,6 +64,14 @@ export const FEATURE_NAMES = {
   },
 };
 
+/** Name of the district device (the station device is "ČHMÚ <station>"). */
+export const DISTRICT_DEVICE_NAME = {
+  en: (name) => `ČHMÚ warnings, ${name}`,
+  fr: (name) => `Alertes ČHMÚ, ${name}`,
+  de: (name) => `ČHMÚ-Warnungen, ${name}`,
+  es: (name) => `Alertas ČHMÚ, ${name}`,
+};
+
 /** Warning types (keys of src/chmi/model.js), by language. */
 export const WARNING_TYPE_NAMES = {
   en: {

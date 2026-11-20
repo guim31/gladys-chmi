@@ -76,7 +76,7 @@ veröffentlicht.
 
 ### Bezirk
 
-Der Name ist „ČHMÚ“ gefolgt vom Namen des Bezirks.
+Der Name ist „ČHMÚ-Warnungen“ gefolgt vom Namen des Bezirks, damit er sich von der Station desselben Orts unterscheidet.
 
 | Funktion                       | Einheit | Hinweis                                                                     |
 | ------------------------------ | ------- | --------------------------------------------------------------------------- |

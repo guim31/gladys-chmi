@@ -75,7 +75,7 @@ estación sin datos desde hace más de 3 horas deja de publicarse como actual.
 
 ### Distrito
 
-El nombre es «ČHMÚ» seguido del nombre del distrito.
+El nombre es «Alertas ČHMÚ» seguido del nombre del distrito, para distinguirlo de la estación de la misma ciudad.
 
 | Función                            | Unidad | Nota                                                                     |
 | ---------------------------------- | ------ | ------------------------------------------------------------------------ |

@@ -11,6 +11,7 @@ import { readFile } from 'node:fs/promises';
 import { LANGUAGES } from '../src/config.js';
 import {
   ACTION_TEXT,
+  DISTRICT_DEVICE_NAME,
   FEATURE_NAMES,
   TEXT,
   WARNING_LEVEL_NAMES,
@@ -204,6 +205,10 @@ test('every message of the code has the four languages', () => {
     }
   }
   assert.deepEqual(tableProblems(rendered, 'ACTION_TEXT', MAX.message), []);
+  const deviceName = Object.fromEntries(
+    LANGS.map((lang) => [lang, DISTRICT_DEVICE_NAME[lang]('Brandýs nad Labem-Stará Boleslav')]),
+  );
+  assert.deepEqual(problems(deviceName, 'DISTRICT_DEVICE_NAME', MAX.label), []);
 });
 
 test('the guard catches a missing language, an empty text and the wrong form of address', () => {

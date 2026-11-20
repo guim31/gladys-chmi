@@ -16,7 +16,7 @@ import {
   DEVICE_FEATURE_UNITS as U,
 } from '@gladysassistant/integration-sdk';
 import { stationFeatureKeys, warningLevels, warningsAhead } from './chmi/model.js';
-import { FEATURE_NAMES, TEXT, formatWhen, warningLabel } from './i18n.js';
+import { DISTRICT_DEVICE_NAME, FEATURE_NAMES, TEXT, formatWhen, warningLabel } from './i18n.js';
 
 /** Device types (first part of the external ids): forever. */
 export const DEVICE_TYPES = { STATION: 'station', DISTRICT: 'district' };
@@ -90,7 +90,7 @@ export function buildDevices(gladys, { station, district, language }) {
   if (district) {
     const ids = gladys.externalIds(DEVICE_TYPES.DISTRICT, district.code);
     devices.push({
-      name: `ČHMÚ ${district.name}`,
+      name: DISTRICT_DEVICE_NAME[language](district.name),
       external_id: ids.device,
       model: 'Weather warnings',
       should_poll: true,
