@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-20
+
 ### Added
 
 - ČHMÚ in Gladys: the official Czech weather, from the open data of the Czech Hydrometeorological
@@ -24,3 +26,6 @@ the notes of the version's GitHub Release.
 - Configuration actions to list the nearest stations and the district, and to check the
   connection.
 - Texts and documentation in English, French, German and Spanish.
+
+[Unreleased]: https://github.com/guim31/gladys-chmi/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/guim31/gladys-chmi/releases/tag/v1.0.0
