@@ -30,6 +30,16 @@ Gladys before reporting a problem.
 
 In scope: the code of this repository and the Docker image it publishes.
 
+What the integration handles:
+
+- **No secret**: the ČHMÚ open data need no account and no key, the configuration holds none.
+- **The position of a Gladys house** (the `location` permission of the manifest): read from
+  Gladys, used inside the container only to find the nearest station and the ORP district. It is
+  never sent anywhere, never written to the logs nor to `/data`.
+- **`/data/state.json`**: the district code and, per warning type, the level and end time of the
+  last warning announced to the scenes. Nothing personal.
+- **Network**: outbound HTTPS GET requests to `opendata.chmi.cz`, nothing inbound.
+
 Out of scope: Gladys Assistant itself (see its
 [security policy](https://github.com/GladysAssistant/Gladys/security/policy)),
-and the third-party services and devices the integration talks to.
+and the ČHMÚ services.

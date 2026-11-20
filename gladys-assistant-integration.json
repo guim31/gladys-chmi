@@ -1,177 +1,648 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "ČHMÚ Czech weather",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Czech weather from ČHMÚ: nearest station readings and official warnings for your ORP district.",
+    "fr": "Météo tchèque du ČHMÚ : mesures de la station proche et alertes officielles de votre district.",
+    "de": "Tschechisches Wetter vom ČHMÚ: Messwerte der nächsten Station und amtliche Warnungen deines Bezirks.",
+    "es": "Tiempo checo del ČHMÚ: datos de la estación más cercana y alertas oficiales de su distrito."
   },
   "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
-  "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "docker_image": "ghcr.io/guim31/gladys-chmi:1.0.0",
+  "gladys_version": ">=5.3.0",
+  "cover_image": "https://raw.githubusercontent.com/guim31/gladys-chmi/main/cover.png",
+  "categories": ["environment"],
+  "countries": ["CZ"],
+  "transports": ["cloud"],
+  "location": true,
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "ČHMÚ (Czech Hydrometeorological Institute)",
+        "fr": "ČHMÚ (institut hydrométéorologique tchèque)",
+        "de": "ČHMÚ (Tschechisches Hydrometeorologisches Institut)",
+        "es": "ČHMÚ (Instituto Hidrometeorológico Checo)"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "Open data of ČHMÚ, the Czech weather service: no account, no key. By default, the integration uses the position of your first Gladys house: the nearest weather station, and the official warnings of its ORP district (one of the 206 districts of Czechia). Not affiliated with ČHMÚ.",
+        "fr": "Données ouvertes du ČHMÚ, le service météo tchèque : ni compte, ni clé. Par défaut, l'intégration prend la position de votre première maison Gladys : la station météo la plus proche, et les alertes officielles de son district ORP (l'un des 206 districts de Tchéquie). Sans lien avec le ČHMÚ.",
+        "de": "Offene Daten des ČHMÚ, des tschechischen Wetterdienstes: kein Konto, kein Schlüssel. Standardmäßig nutzt die Integration die Position deines ersten Gladys-Zuhauses: die nächste Wetterstation und die amtlichen Warnungen seines ORP-Bezirks (einer der 206 Bezirke Tschechiens). Keine Verbindung zum ČHMÚ.",
+        "es": "Datos abiertos del ČHMÚ, el servicio meteorológico checo: sin cuenta ni clave. Por defecto, la integración usa la posición de su primera casa de Gladys: la estación más cercana y las alertas oficiales de su distrito ORP (uno de los 206 distritos de Chequia). Sin relación con el ČHMÚ."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://opendata.chmi.cz/",
+          "label": {
+            "en": "ČHMÚ open data",
+            "fr": "Données ouvertes du ČHMÚ",
+            "de": "Offene Daten des ČHMÚ",
+            "es": "Datos abiertos del ČHMÚ"
+          }
+        },
+        {
+          "url": "https://vystrahy-cr.chmi.cz/",
+          "label": {
+            "en": "ČHMÚ warnings map",
+            "fr": "Carte des alertes du ČHMÚ",
+            "de": "Warnkarte des ČHMÚ",
+            "es": "Mapa de alertas del ČHMÚ"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+      "key": "house",
+      "type": "select",
+      "source": "houses",
+      "label": {
+        "en": "House",
+        "fr": "Maison",
+        "de": "Zuhause",
+        "es": "Casa"
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "description": {
+        "en": "The house whose position is used. Empty: the first house with a position.",
+        "fr": "La maison dont la position est utilisée. Vide : la première maison qui a une position.",
+        "de": "Das Zuhause, dessen Position genutzt wird. Leer: das erste Zuhause mit Position.",
+        "es": "La casa cuya posición se usa. Vacío: la primera casa con posición."
+      },
+      "required": false
+    },
+    {
+      "key": "latitude",
+      "type": "string",
+      "label": {
+        "en": "Latitude (optional)",
+        "fr": "Latitude (facultatif)",
+        "de": "Breitengrad (optional)",
+        "es": "Latitud (opcional)"
+      },
+      "description": {
+        "en": "To use another place than a house. Takes precedence over the house.",
+        "fr": "Pour un autre lieu qu'une maison. Prioritaire sur la maison.",
+        "de": "Für einen anderen Ort als ein Zuhause. Hat Vorrang vor dem Zuhause.",
+        "es": "Para otro lugar que una casa. Tiene prioridad sobre la casa."
+      },
+      "placeholder": {
+        "en": "e.g. 50.08",
+        "fr": "ex. 50,08",
+        "de": "z. B. 50,08",
+        "es": "p. ej. 50,08"
+      },
+      "required": false,
+      "default": ""
     },
     {
       "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+      "type": "string",
+      "label": {
+        "en": "Longitude (optional)",
+        "fr": "Longitude (facultatif)",
+        "de": "Längengrad (optional)",
+        "es": "Longitud (opcional)"
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "placeholder": {
+        "en": "e.g. 14.42",
+        "fr": "ex. 14,42",
+        "de": "z. B. 14,42",
+        "es": "p. ej. 14,42"
+      },
+      "required": false,
+      "default": ""
     },
     {
-      "key": "unit",
-      "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
+      "key": "station_id",
+      "type": "string",
+      "label": {
+        "en": "Weather station (optional)",
+        "fr": "Station météo (facultatif)",
+        "de": "Wetterstation (optional)",
+        "es": "Estación meteorológica (opcional)"
+      },
+      "description": {
+        "en": "Id of a ČHMÚ station. Empty: the nearest one. The action below lists them.",
+        "fr": "Identifiant d'une station du ČHMÚ. Vide : la plus proche. L'action ci-dessous les liste.",
+        "de": "ID einer ČHMÚ-Station. Leer: die nächste. Die Aktion unten listet sie auf.",
+        "es": "Identificador de una estación del ČHMÚ. Vacío: la más cercana. La acción de abajo las lista."
+      },
+      "placeholder": {
+        "en": "e.g. 0-20000-0-11518",
+        "fr": "ex. 0-20000-0-11518",
+        "de": "z. B. 0-20000-0-11518",
+        "es": "p. ej. 0-20000-0-11518"
+      },
       "required": false,
-      "default": "celsius",
+      "default": ""
+    },
+    {
+      "key": "district",
+      "type": "string",
+      "label": {
+        "en": "Warning district (optional)",
+        "fr": "District des alertes (facultatif)",
+        "de": "Warnbezirk (optional)",
+        "es": "Distrito de alertas (opcional)"
+      },
+      "description": {
+        "en": "Name or 4-digit code of an ORP district. Empty: the one of the location.",
+        "fr": "Nom ou code à 4 chiffres d'un district ORP. Vide : celui du lieu.",
+        "de": "Name oder 4-stelliger Code eines ORP-Bezirks. Leer: der des Orts.",
+        "es": "Nombre o código de 4 cifras de un distrito ORP. Vacío: el del lugar."
+      },
+      "placeholder": {
+        "en": "e.g. Beroun",
+        "fr": "ex. Beroun",
+        "de": "z. B. Beroun",
+        "es": "p. ej. Beroun"
+      },
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "refresh_minutes",
+      "type": "select",
+      "label": {
+        "en": "Refresh interval",
+        "fr": "Fréquence de rafraîchissement",
+        "de": "Aktualisierungsintervall",
+        "es": "Intervalo de actualización"
+      },
+      "description": {
+        "en": "ČHMÚ publishes the station readings once an hour.",
+        "fr": "Le ČHMÚ publie les mesures des stations une fois par heure.",
+        "de": "Der ČHMÚ veröffentlicht die Messwerte einmal pro Stunde.",
+        "es": "El ČHMÚ publica los datos de las estaciones una vez por hora."
+      },
+      "required": false,
+      "default": "15",
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        {
+          "value": "15",
+          "label": {
+            "en": "15 minutes",
+            "fr": "15 minutes",
+            "de": "15 Minuten",
+            "es": "15 minutos"
+          }
+        },
+        {
+          "value": "30",
+          "label": {
+            "en": "30 minutes",
+            "fr": "30 minutes",
+            "de": "30 Minuten",
+            "es": "30 minutos"
+          }
+        },
+        {
+          "value": "60",
+          "label": {
+            "en": "60 minutes",
+            "fr": "60 minutes",
+            "de": "60 Minuten",
+            "es": "60 minutos"
+          }
+        }
       ]
     },
     {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "key": "language",
+      "type": "select",
+      "label": {
+        "en": "Language of the feature names",
+        "fr": "Langue des noms de fonctionnalités",
+        "de": "Sprache der Funktionsnamen",
+        "es": "Idioma de los nombres de funciones"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Used when the devices are created, and for the scene event texts.",
+        "fr": "Utilisée à la création des appareils, et pour les textes des événements de scène.",
+        "de": "Wird beim Anlegen der Geräte und für die Texte der Szenen-Ereignisse genutzt.",
+        "es": "Se usa al crear los dispositivos y para los textos de los eventos de escena."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": "fr",
+      "options": [
+        {
+          "value": "en",
+          "label": {
+            "en": "English",
+            "fr": "Anglais",
+            "de": "Englisch",
+            "es": "Inglés"
+          }
+        },
+        {
+          "value": "fr",
+          "label": {
+            "en": "French",
+            "fr": "Français",
+            "de": "Französisch",
+            "es": "Francés"
+          }
+        },
+        {
+          "value": "de",
+          "label": {
+            "en": "German",
+            "fr": "Allemand",
+            "de": "Deutsch",
+            "es": "Alemán"
+          }
+        },
+        {
+          "value": "es",
+          "label": {
+            "en": "Spanish",
+            "fr": "Espagnol",
+            "de": "Spanisch",
+            "es": "Español"
+          }
+        }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
+      "key": "list_stations",
+      "label": {
+        "en": "List the nearest stations",
+        "fr": "Lister les stations proches",
+        "de": "Nächste Stationen anzeigen",
+        "es": "Listar las estaciones cercanas"
+      },
       "timeout_seconds": 30
     },
     {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
+      "key": "check_connection",
+      "label": {
+        "en": "Check the connection",
+        "fr": "Tester la connexion",
+        "de": "Verbindung prüfen",
+        "es": "Comprobar la conexión"
+      },
+      "timeout_seconds": 60
     }
   ],
   "scene_triggers": [
     {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
+      "key": "warning_issued",
+      "label": {
+        "en": "New ČHMÚ warning",
+        "fr": "Nouvelle alerte du ČHMÚ",
+        "de": "Neue ČHMÚ-Warnung",
+        "es": "Nueva alerta del ČHMÚ"
+      },
       "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
+        "en": "ČHMÚ issued a weather warning for the district, or raised its level. Fires as soon as it is announced, often hours before it starts.",
+        "fr": "Le ČHMÚ a émis une alerte météo pour le district, ou en a relevé le niveau. Se déclenche dès l'annonce, souvent des heures avant le début.",
+        "de": "Der ČHMÚ hat eine Wetterwarnung für den Bezirk ausgegeben oder ihre Stufe erhöht. Löst bei der Ankündigung aus, oft Stunden vor Beginn.",
+        "es": "El ČHMÚ ha emitido una alerta meteorológica para el distrito, o ha subido su nivel. Se activa en cuanto se anuncia, a menudo horas antes del inicio."
       },
       "fields": [
         {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
+          "key": "warning_type",
+          "type": "multi_select",
+          "label": {
+            "en": "Warning types",
+            "fr": "Types d'alerte",
+            "de": "Warnarten",
+            "es": "Tipos de alerta"
+          },
+          "options": [
+            {
+              "value": "wind",
+              "label": {
+                "en": "Wind",
+                "fr": "Vent",
+                "de": "Wind",
+                "es": "Viento"
+              }
+            },
+            {
+              "value": "snow_ice",
+              "label": {
+                "en": "Snow, ice",
+                "fr": "Neige, verglas",
+                "de": "Schnee, Glätte",
+                "es": "Nieve, hielo"
+              }
+            },
+            {
+              "value": "thunderstorm",
+              "label": {
+                "en": "Thunderstorms",
+                "fr": "Orages",
+                "de": "Gewitter",
+                "es": "Tormentas"
+              }
+            },
+            {
+              "value": "fog",
+              "label": {
+                "en": "Fog",
+                "fr": "Brouillard",
+                "de": "Nebel",
+                "es": "Niebla"
+              }
+            },
+            {
+              "value": "heat",
+              "label": {
+                "en": "Heat",
+                "fr": "Canicule",
+                "de": "Hitze",
+                "es": "Calor"
+              }
+            },
+            {
+              "value": "cold",
+              "label": {
+                "en": "Cold",
+                "fr": "Grand froid",
+                "de": "Kälte",
+                "es": "Frío"
+              }
+            },
+            {
+              "value": "forest_fire",
+              "label": {
+                "en": "Fire risk",
+                "fr": "Risque d’incendie",
+                "de": "Brandgefahr",
+                "es": "Riesgo de incendio"
+              }
+            },
+            {
+              "value": "rain",
+              "label": {
+                "en": "Rain",
+                "fr": "Pluie",
+                "de": "Regen",
+                "es": "Lluvia"
+              }
+            },
+            {
+              "value": "flood",
+              "label": {
+                "en": "Flooding",
+                "fr": "Inondation",
+                "de": "Hochwasser",
+                "es": "Inundación"
+              }
+            },
+            {
+              "value": "other",
+              "label": {
+                "en": "Other hazard",
+                "fr": "Autre phénomène",
+                "de": "Sonstige Gefahr",
+                "es": "Otro fenómeno"
+              }
+            }
+          ]
         },
         {
-          "key": "target",
+          "key": "level",
           "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
+          "label": {
+            "en": "Levels",
+            "fr": "Niveaux",
+            "de": "Stufen",
+            "es": "Niveles"
+          },
           "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
+            {
+              "value": "yellow",
+              "label": {
+                "en": "Yellow",
+                "fr": "Jaune",
+                "de": "Gelb",
+                "es": "Amarilla"
+              }
+            },
+            {
+              "value": "orange",
+              "label": {
+                "en": "Orange",
+                "fr": "Orange",
+                "de": "Orange",
+                "es": "Naranja"
+              }
+            },
+            {
+              "value": "red",
+              "label": {
+                "en": "Red",
+                "fr": "Rouge",
+                "de": "Rot",
+                "es": "Roja"
+              }
+            }
           ]
         }
       ],
       "variables": [
         {
-          "key": "target",
+          "key": "type_label",
           "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
+          "label": {
+            "en": "Warning type",
+            "fr": "Type d'alerte",
+            "de": "Warnart",
+            "es": "Tipo de alerta"
+          }
+        },
         {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
+          "key": "level_label",
+          "type": "string",
+          "label": {
+            "en": "Level",
+            "fr": "Niveau",
+            "de": "Stufe",
+            "es": "Nivel"
+          }
+        },
         {
-          "key": "signalled",
+          "key": "level_number",
+          "type": "number",
+          "label": {
+            "en": "Level (1 to 3)",
+            "fr": "Niveau (1 à 3)",
+            "de": "Stufe (1 bis 3)",
+            "es": "Nivel (1 a 3)"
+          }
+        },
+        {
+          "key": "warning_type",
+          "type": "string",
+          "label": {
+            "en": "Type key (wind, heat…)",
+            "fr": "Clé du type (wind, heat…)",
+            "de": "Typschlüssel (wind, heat…)",
+            "es": "Clave del tipo (wind, heat…)"
+          }
+        },
+        {
+          "key": "level",
+          "type": "string",
+          "label": {
+            "en": "Level key (yellow…)",
+            "fr": "Clé du niveau (yellow…)",
+            "de": "Stufenschlüssel (yellow…)",
+            "es": "Clave del nivel (yellow…)"
+          }
+        },
+        {
+          "key": "event",
+          "type": "string",
+          "label": {
+            "en": "Official name (English)",
+            "fr": "Nom officiel (anglais)",
+            "de": "Amtlicher Name (Englisch)",
+            "es": "Nombre oficial (inglés)"
+          }
+        },
+        {
+          "key": "event_cs",
+          "type": "string",
+          "label": {
+            "en": "Official name (Czech)",
+            "fr": "Nom officiel (tchèque)",
+            "de": "Amtlicher Name (Tschechisch)",
+            "es": "Nombre oficial (checo)"
+          }
+        },
+        {
+          "key": "starts_at",
+          "type": "string",
+          "label": {
+            "en": "Start",
+            "fr": "Début",
+            "de": "Beginn",
+            "es": "Inicio"
+          }
+        },
+        {
+          "key": "ends_at",
+          "type": "string",
+          "label": {
+            "en": "End",
+            "fr": "Fin",
+            "de": "Ende",
+            "es": "Fin"
+          }
+        },
+        {
+          "key": "in_force",
           "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
+          "label": {
+            "en": "Already in force",
+            "fr": "Déjà en cours",
+            "de": "Bereits aktiv",
+            "es": "Ya en vigor"
+          }
+        },
+        {
+          "key": "is_update",
+          "type": "boolean",
+          "label": {
+            "en": "Level raised",
+            "fr": "Niveau relevé",
+            "de": "Stufe erhöht",
+            "es": "Nivel subido"
+          }
+        },
+        {
+          "key": "description",
+          "type": "string",
+          "label": {
+            "en": "Official text (English)",
+            "fr": "Texte officiel (anglais)",
+            "de": "Amtlicher Text (Englisch)",
+            "es": "Texto oficial (inglés)"
+          }
+        },
+        {
+          "key": "instruction",
+          "type": "string",
+          "label": {
+            "en": "Advice (English)",
+            "fr": "Conseils (anglais)",
+            "de": "Verhaltenshinweise (Englisch)",
+            "es": "Consejos (inglés)"
+          }
+        },
+        {
+          "key": "district",
+          "type": "string",
+          "label": {
+            "en": "District",
+            "fr": "District",
+            "de": "Bezirk",
+            "es": "Distrito"
+          }
         }
       ]
     }
   ],
   "widgets": [
     {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
+      "key": "weather",
+      "label": {
+        "en": "ČHMÚ weather",
+        "fr": "Météo ČHMÚ",
+        "de": "ČHMÚ-Wetter",
+        "es": "Tiempo ČHMÚ"
       },
-      "icon": "activity",
-      "action_timeout_seconds": 15
+      "description": {
+        "en": "Station readings and the warnings of your district.",
+        "fr": "Mesures de la station et alertes de votre district.",
+        "de": "Messwerte der Station und Warnungen deines Bezirks.",
+        "es": "Datos de la estación y alertas de su distrito."
+      },
+      "icon": "cloud",
+      "settings": [
+        {
+          "key": "show_station",
+          "type": "boolean",
+          "label": {
+            "en": "Show the station readings",
+            "fr": "Afficher les mesures de la station",
+            "de": "Messwerte der Station anzeigen",
+            "es": "Mostrar los datos de la estación"
+          },
+          "description": {
+            "en": "Temperature, humidity, wind and gusts.",
+            "fr": "Température, humidité, vent et rafales.",
+            "de": "Temperatur, Feuchte, Wind und Böen.",
+            "es": "Temperatura, humedad, viento y ráfagas."
+          },
+          "required": false,
+          "default": true
+        },
+        {
+          "key": "show_warnings",
+          "type": "boolean",
+          "label": {
+            "en": "Show the warnings",
+            "fr": "Afficher les alertes",
+            "de": "Warnungen anzeigen",
+            "es": "Mostrar las alertas"
+          },
+          "description": {
+            "en": "The warnings in force or announced for the district.",
+            "fr": "Les alertes en cours ou annoncées pour le district.",
+            "de": "Die aktiven oder angekündigten Warnungen des Bezirks.",
+            "es": "Las alertas en vigor o anunciadas para el distrito."
+          },
+          "required": false,
+          "default": true
+        }
+      ]
     }
   ]
 }
