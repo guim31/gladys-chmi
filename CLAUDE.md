@@ -16,8 +16,8 @@ its only runtime dependency. It started from the official JavaScript template.
 ```bash
 npm install
 npm test                                  # node --test, the built-in runner
-node --test test/devices.test.js          # one file
-node --test --test-name-pattern "plug"    # tests whose name matches
+node --test test/model.test.js            # one file
+node --test --test-name-pattern "CAP"     # tests whose name matches
 npm run lint                              # ESLint
 npm run format:check                      # Prettier, as the CI runs it
 npm run format                            # Prettier, fix in place
@@ -31,16 +31,24 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
+index.js                          SDK wiring only: registerHandlers(gladys), connect()
+src/app.js                        handlers: scan, poll fallback, device created, actions, widget, config
+src/service.js                    setup (house/coordinates/station/district), refresh cycle, states, trigger, status
+src/poller.js                     the container's own refresh timer (Gladys#3198), onPoll as fallback
+src/devices.js                    the two devices (station, district): features and states
+src/chmi/client.js                HTTP client of opendata.chmi.cz (If-None-Match on the observations)
+src/chmi/model.js                 pure parsers: stations, observations, CAP index, CAP warnings
+src/chmi/districts.js             ORP district of a point (offline), or by name/code
+src/data/orp.json                 outlines of the 206 ORP districts (scripts/build-orp.mjs)
+src/widgets.js                    dashboard widget "weather" (pure content builder)
+src/i18n.js                       every produced text, en/fr/de/es; ActionFailure
 src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
-gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+src/store.js, src/issues.js       /data/state.json (warning episodes announced), failures logged once
+scripts/probe.mjs                 read-only probe of the real ČHMÚ data for a point
+scripts/build-orp.mjs             rebuilds src/data/orp.json from ČÚZK and ČSÚ
+gladys-assistant-integration.json manifest: name, config_schema, actions, trigger, widget...
+docs/{en,fr,de,es}.md             user documentation, re-hosted by Gladys (same sections)
+test/                             node --test, against the SDK's fake Gladys and test/fixtures
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
 
@@ -259,3 +267,33 @@ long, et sur un « Sie »/« Ihr… » de politesse en allemand. Le store exige 
 - Docs `en`, `fr`, `de`, `es` avec les mêmes sections.
 - Chauffe, ouverture, sécurité : ne rien rendre pilotable « comme un thermostat » ou par un assistant
   vocal quand une erreur serait dangereuse (leçon d'OctoPrint).
+
+## ČHMÚ (propre à cette intégration)
+
+**Données** (`https://opendata.chmi.cz/meteorology/`, sans compte ni clé, CC BY 4.0) :
+
+- `climate/now/metadata/meta1-<YYYYMMDD>.json` (stations : WSI, GH_ID, nom, `GEOGR1` = **longitude**,
+  `GEOGR2` = latitude ; liste aussi des stations étrangères et des doublons) et `meta2-…` (éléments
+  par station et type d'observation `10M`/`1H`), publiés à 00:01 UTC : avant, prendre la veille.
+- `climate/now/data/10m-<WSI>-<YYYYMMDD>.json` (jour **UTC**) : réécrit **une fois par heure** (à :01,
+  valeurs jusqu'à :50), d'où une valeur vieille de 10 à 70 min. ETag servi : `If-None-Match` → 304.
+  Lignes `[STATION, ELEMENT, DT, VAL, FLAG, QUALITY]` ; qualité 2 (médiocre) et 4 (manquante)
+  écartées (`meta4`). `P` est la pression **à la station**, `F`/`Fmax` en m/s, `SRA10M` mm sur
+  10 min, `SSV10M` secondes de soleil. `TPM` est la température près du sol, pas le point de rosée.
+- `weather/alerts/cap/` : un fichier par émission, **image complète** du pays (1,5 à 2 Mo), avec des
+  blocs « pas d'alerte » (`responseType None`, `Minor`) et le « výhled » (`SIVS` = `OUTLOOK`) à
+  écarter. Noms `alert_cap_50_DDHHMM.xml` (jour du mois, **réutilisés chaque mois**) : la date de
+  l'index (UTC) décide. `_70_` = bulletin hebdomadaire de sécheresse (HAMR), ignoré. Zones par
+  géocode `CISORP` (code ČSÚ à 4 chiffres ; Prague = **1100** dans les CAP, 1000 dans le
+  code-liste ČSÚ). Niveau : paramètre `awareness_level` (« 2; yellow; Moderate » → 1), type :
+  `awareness_type` (MeteoAlarm). Chaque alerte vient en `cs` puis `en-GB`.
+
+**Pièges et choix** :
+
+- Les contours des ORP (`src/data/orp.json`) viennent du service ArcGIS du ČÚZK (couche 14,
+  généralisée à 0,005°) et le lien code RÚIAN → CISORP du code-liste ČSÚ 65 (`kod_ruian`). Une
+  tolérance de 2 km rattrape une maison juste hors d'un contour simplifié.
+- Le ČHMÚ réémet ses alertes plusieurs fois par jour avec des débuts recalculés : le déclencheur
+  raisonne par **épisode et par type** (même type, écart < 1 h = même épisode), pas par identifiant.
+- Fichiers horaires : rafraîchir toutes les 15 min sert seulement à attraper le lot horaire tôt ; un
+  cycle normal coûte l'index CAP (~100 Ko) et un 304.
