@@ -244,7 +244,11 @@ test('a scene event Gladys refuses is sent again at the next refresh', async () 
   };
   await world.refresh(15);
   assert.equal(world.gladys.fake.sceneEvents.length, 0);
-  assert.equal(world.logs.at('error').length, 1);
+  await world.refresh(15);
+  const refused = world.logs.lines.filter(
+    (line) => line.level !== 'debug' && /Scene event refused/.test(line.text),
+  );
+  assert.equal(refused.length, 1, 'one line, not one per attempt');
   world.gladys.publishSceneEvent = publish;
   await world.refresh(15);
   assert.equal(world.gladys.fake.sceneEvents.length, 1);

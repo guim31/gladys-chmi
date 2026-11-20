@@ -380,15 +380,15 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
     }
     if (JSON.stringify(episodes) !== JSON.stringify(seen[code])) {
       seen = { ...seen, [code]: episodes };
-      // Districts not followed for a while are forgotten.
+      // Districts not followed for a while are forgotten (an empty one is
+      // kept: it marks a district already seen, at most 206 entries).
       for (const [other, list] of Object.entries(seen)) {
-        const last = Math.max(
-          0,
-          ...Object.values(list)
-            .flat()
-            .map((e) => e.end),
-        );
-        if (other !== code && last < now() - SEEN_RETENTION) delete seen[other];
+        const ends = Object.values(list)
+          .flat()
+          .map((e) => e.end);
+        if (other !== code && ends.length > 0 && Math.max(...ends) < now() - SEEN_RETENTION) {
+          delete seen[other];
+        }
       }
       await store
         .save({ version: 2, seen })
@@ -417,9 +417,10 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
         instruction: warning.instruction.slice(0, 1000),
         district: warnings.districtName,
       });
+      issues.ok('scene', 'Scene events: Gladys accepts them again');
       return true;
     } catch (err) {
-      logger.error(`Scene event refused, retried at the next refresh (${err.message})`);
+      issues.fail('scene', `Scene event refused, retried at the next refresh (${err.message})`);
       return false;
     }
   }
