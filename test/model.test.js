@@ -185,6 +185,13 @@ test('a CAP file with entities and a red level', () => {
     ['snow_ice', 3, 'Description & details'],
   );
   assert.throws(() => parseCap('<html>404</html>', '2102'), /Not a CAP file/);
+  // Without its English block, a warning is kept with its Czech name.
+  const czechOnly = xml.replace(/<info>(?:(?!<\/info>)[\s\S])*?en-GB[\s\S]*?<\/info>/, '');
+  const [kept] = parseCap(czechOnly, '2102').warnings;
+  assert.deepEqual(
+    [kept.type, kept.level, kept.event, kept.eventCs],
+    ['snow_ice', 3, '', 'Výstraha snow_ice'],
+  );
 });
 
 test('districts: 206 ORP, found from a point, a code or a name', () => {

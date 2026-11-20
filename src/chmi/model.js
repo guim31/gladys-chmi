@@ -285,8 +285,8 @@ export function parseCap(xml, district) {
   }
   const header = xml.slice(0, xml.indexOf('<info>') >>> 0);
   const sent = parseTime(tag(header, 'sent'));
-  const czechNames = new Map();
-  const english = [];
+  const czech = new Map();
+  const english = new Map();
   for (const block of xml.split('<info>').slice(1)) {
     const info = block.slice(0, block.indexOf('</info>') >>> 0);
     const codes = new Set(
@@ -308,13 +308,7 @@ export function parseCap(xml, district) {
     const end = parseTime(tag(info, 'expires')) ?? parseTime(parameters.eventEndingTime ?? '');
     const key = `${sivs}|${start}|${end}`;
     const language = tag(info, 'language');
-    if (language === 'cs') {
-      czechNames.set(key, tag(info, 'event'));
-      continue;
-    }
-    if (!language.startsWith('en')) continue;
-    english.push({
-      key,
+    const warning = {
       code: sivs,
       type: AWARENESS_TYPES[Number.parseInt(parameters.awareness_type ?? '', 10)] ?? 'other',
       level: Math.min(level, 3),
@@ -323,11 +317,30 @@ export function parseCap(xml, district) {
       event: tag(info, 'event'),
       description: tag(info, 'description'),
       instruction: tag(info, 'instruction'),
-    });
+    };
+    if (language === 'cs') {
+      czech.set(key, warning);
+    } else if (language.startsWith('en')) {
+      english.set(key, warning);
+    }
   }
-  const warnings = english
-    .map(({ key, ...warning }) => ({ ...warning, eventCs: czechNames.get(key) ?? '' }))
-    .sort((a, b) => a.start - b.start || b.level - a.level);
+  // The English block gives the texts; a warning issued in Czech only is
+  // still a warning (its texts stay empty, its Czech name is kept).
+  const warnings = [
+    ...[...english].map(([key, warning]) => ({
+      ...warning,
+      eventCs: czech.get(key)?.event ?? '',
+    })),
+    ...[...czech]
+      .filter(([key]) => !english.has(key))
+      .map(([, warning]) => ({
+        ...warning,
+        event: '',
+        description: '',
+        instruction: '',
+        eventCs: warning.event,
+      })),
+  ].sort((a, b) => a.start - b.start || b.level - a.level);
   return { sent, warnings };
 }
 

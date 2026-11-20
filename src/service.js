@@ -61,7 +61,8 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
   const issues = createIssueLog(logger);
   let metadata = null; // { stations, at }
   let target = null; // { station, district, place, problem }
-  let observation = null; // { data, url, etag }
+  let observation = null; // { key, data }: the values shown
+  const observationFiles = new Map(); // `${station}/${day}` -> { etag, data }
   let warnings = null; // { file, sent, warnings }
   let seen; // { [type]: { level, end } }, undefined until loaded
   let lastStatus = null;
@@ -128,34 +129,30 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
   }
 
   /**
-   * Work out the station and the district from the config, then publish the
-   * devices. Throws when ČHMÚ or Gladys does not answer (retried at the next
-   * cycle); a configuration problem is reported in `target.problem`.
+   * Work out the station and the district from the config and the house.
+   * Throws when ČHMÚ or Gladys does not answer; a configuration problem is
+   * reported in `problem`.
    */
-  async function setup() {
+  async function resolveTarget() {
     const config = getConfig();
     const empty = (problem) => ({ station: null, district: null, place: null, problem });
     if (config.stationIdInvalid) {
-      target = empty('stationIdInvalid');
-      return target;
+      return empty('stationIdInvalid');
     }
     let district = null;
     if (config.district) {
       district = findDistrict(config.district);
       if (!district) {
-        target = empty('districtUnknown');
-        return target;
+        return empty('districtUnknown');
       }
     }
     const location = await resolveLocation(config);
     if (location.problem) {
-      target = empty(location.problem);
-      return target;
+      return empty(location.problem);
     }
     const { place } = location;
     if (!place && !config.stationId && !district) {
-      target = empty('notConfigured');
-      return target;
+      return empty('notConfigured');
     }
     let problem = null;
     let station = null;
@@ -174,14 +171,36 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
       district = point ? districtAt(point.lat, point.lon) : null;
       if (!district && place) problem = problem ?? 'outsideArea';
     }
-    target = { station, district, place, problem };
+    return { station, district, place, problem };
+  }
+
+  // What identifies a target: a house moved or renamed, a problem solved in
+  // Gladys (a house placed on the map) gives another one.
+  const identity = (t) =>
+    JSON.stringify([t.station?.id, t.district?.code, t.place, t.problem, getConfig().language]);
+
+  /**
+   * Resolve the target again (each cycle: the house may have been placed or
+   * moved in Gladys since), and publish the devices when it changed.
+   */
+  async function setup() {
+    const next = await resolveTarget();
+    if (target && identity(target) === identity(next)) {
+      target = next;
+      return target;
+    }
+    target = next;
+    if (!target.station && !target.district) {
+      return target;
+    }
+    const { station, district, problem } = target;
     logger.info(
       `Ready: ${station ? `station ${station.id} ${station.name}` : 'no station'}, ` +
         `${district ? `warnings of district ${district.code} ${district.name}` : 'no warnings'}` +
         `${problem ? ` (${problem})` : ''}`,
     );
     await gladys.publishDiscoveredDevices(
-      buildDevices(gladys, { ...target, language: config.language }),
+      buildDevices(gladys, { ...target, language: getConfig().language }),
     );
     return target;
   }
@@ -191,14 +210,24 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
     const fetchDay = async (time) => {
       const day = utcDay(time);
       const key = `${station.id}/${day}`;
-      const etag = observation?.key === key ? observation.etag : undefined;
-      const answer = await client.observations(station.id, day, etag);
-      if (answer.json === undefined) {
+      const cached = observationFiles.get(key);
+      const answer = await client.observations(station.id, day, cached?.etag);
+      let data;
+      if (answer.json === undefined && cached) {
         logger.debug(`Station ${station.id}: file unchanged`);
-        return observation.data;
+        data = cached.data;
+      } else {
+        data = parseObservation(answer.json);
+        // The files of this station only, today's and yesterday's at most.
+        for (const old of [...observationFiles.keys()]) {
+          if (!old.startsWith(`${station.id}/`)) observationFiles.delete(old);
+        }
+        if (observationFiles.size >= 2 && !observationFiles.has(key)) {
+          observationFiles.delete(observationFiles.keys().next().value);
+        }
+        observationFiles.set(key, { etag: answer.etag, data });
       }
-      const data = parseObservation(answer.json);
-      observation = { key, etag: answer.etag, data };
+      observation = { key, data };
       return data;
     };
     try {
@@ -223,7 +252,7 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
       return warnings;
     }
     const parsed = parseCap(await client.capFile(latest.name), district.code);
-    warnings = { file, district: district.code, ...parsed };
+    warnings = { file, district: district.code, districtName: district.name, ...parsed };
     logger.debug(`CAP ${latest.name}: ${parsed.warnings.length} warning(s) for ${district.code}`);
     return warnings;
   }
@@ -247,8 +276,9 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
     if (next === lastStatus) {
       return;
     }
-    lastStatus = next;
     await gladys.setConnectionStatus(connected, message);
+    // Recorded once accepted: a status Gladys did not take is sent again.
+    lastStatus = next;
   }
 
   /** The states of the devices the user added to Gladys. */
@@ -262,7 +292,7 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
     const { station, district } = target;
     if (
       station &&
-      observation &&
+      observation?.key.startsWith(`${station.id}/`) &&
       created.has(gladys.externalIds('station', station.id).device) &&
       observation.data.time !== null &&
       now() - observation.data.time < OBSERVATION_MAX_AGE
@@ -296,74 +326,101 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
 
   /**
    * Fire the scene trigger for each new warning episode: a warning of a type
-   * that had no warning in progress (or ended more than an hour before), or
+   * that overlaps no episode already announced (an hour apart at least), or
    * whose level rose. A CAP file is a full picture re-issued several times a
    * day: a warning merely extended or re-issued is the same episode, not a new
-   * event. The very first run only takes note: a fresh install does not fire
-   * for the warnings issued before it.
+   * event. An event Gladys refuses is not recorded, so the next cycle sends
+   * it again. The very first run of a district only takes note: a fresh
+   * install does not fire for the warnings issued before it.
    */
   async function announceWarnings() {
     if (!warnings || warnings.district !== target?.district?.code) {
       return;
     }
+    const code = warnings.district;
     if (seen === undefined) {
       const saved = await store.load();
-      seen = saved?.district === warnings.district ? (saved.seen ?? null) : null;
+      seen = saved?.version === 2 && saved.seen && typeof saved.seen === 'object' ? saved.seen : {};
     }
-    const baseline = seen === null;
-    const next = { ...(seen ?? {}) };
-    const fresh = [];
+    const baseline = !seen[code];
+    // type -> [{ start, end, level }]
+    const episodes = structuredClone(seen[code] ?? {});
+    const language = getConfig().language;
     for (const warning of warningsAhead(warnings.warnings, now()).sort(
       (a, b) => a.start - b.start,
     )) {
-      const end = warning.end ?? now() + DAY;
-      const previous = next[warning.type];
-      const newEpisode = !previous || previous.end < warning.start - EPISODE_GAP;
-      if (newEpisode || warning.level > previous.level) {
-        fresh.push({ warning, update: !newEpisode });
+      // Without an end, an episode lasts until a later file says otherwise.
+      const end = warning.end ?? Math.max(warning.start, now()) + 6 * HOUR;
+      const list = episodes[warning.type] ?? [];
+      const episode = list.find(
+        (e) => warning.start <= e.end + EPISODE_GAP && end >= e.start - EPISODE_GAP,
+      );
+      const isNew = !episode;
+      const raised = Boolean(episode) && warning.level > episode.level;
+      if ((isNew || raised) && !baseline) {
+        const sent = await publishWarning(warning, raised, language);
+        if (!sent) continue;
       }
-      next[warning.type] = newEpisode
-        ? { level: warning.level, end }
-        : { level: Math.max(warning.level, previous.level), end: Math.max(end, previous.end) };
-    }
-    for (const [type, entry] of Object.entries(next)) {
-      if (entry.end < now() - SEEN_RETENTION) {
-        delete next[type];
+      if (episode) {
+        episode.start = Math.min(episode.start, warning.start);
+        episode.end = Math.max(episode.end, end);
+        episode.level = Math.max(episode.level, warning.level);
+      } else {
+        list.push({ start: warning.start, end, level: warning.level });
       }
+      episodes[warning.type] = list;
     }
-    const changed = JSON.stringify(next) !== JSON.stringify(seen);
-    seen = next;
-    if (changed) {
-      await store
-        .save({ district: warnings.district, seen })
-        .catch((err) => issues.fail('store', `Cannot write /data (${err.message})`));
+    for (const [type, list] of Object.entries(episodes)) {
+      const kept = list.filter((e) => e.end >= now() - SEEN_RETENTION);
+      if (kept.length > 0) episodes[type] = kept;
+      else delete episodes[type];
     }
     if (baseline) {
-      logger.debug(`${fresh.length} warning(s) noted, first run: no scene event`);
-      return;
+      logger.debug('First run for this district: warnings noted, no scene event');
     }
-    const language = getConfig().language;
-    for (const { warning, update } of fresh) {
-      const levelKey = WARNING_LEVEL_KEYS[warning.level - 1];
-      logger.info(`New warning: ${levelKey} ${warning.type}${update ? ' (level raised)' : ''}`);
-      await gladys
-        .publishSceneEvent(WARNING_TRIGGER, {
-          warning_type: warning.type,
-          level: levelKey,
-          level_number: warning.level,
-          type_label: WARNING_TYPE_NAMES[language][warning.type],
-          level_label: WARNING_LEVEL_NAMES[language][levelKey],
-          event: warning.event.slice(0, 200),
-          event_cs: warning.eventCs.slice(0, 200),
-          starts_at: formatWhen(warning.start, language, timeZone, now()),
-          ends_at: warning.end === null ? '' : formatWhen(warning.end, language, timeZone, now()),
-          in_force: warning.start <= now(),
-          is_update: update,
-          description: warning.description.slice(0, 1000),
-          instruction: warning.instruction.slice(0, 1000),
-          district: target.district.name,
-        })
-        .catch((err) => logger.error(`Scene event refused (${err.message})`));
+    if (JSON.stringify(episodes) !== JSON.stringify(seen[code])) {
+      seen = { ...seen, [code]: episodes };
+      // Districts not followed for a while are forgotten.
+      for (const [other, list] of Object.entries(seen)) {
+        const last = Math.max(
+          0,
+          ...Object.values(list)
+            .flat()
+            .map((e) => e.end),
+        );
+        if (other !== code && last < now() - SEEN_RETENTION) delete seen[other];
+      }
+      await store
+        .save({ version: 2, seen })
+        .catch((err) => issues.fail('store', `Cannot write /data (${err.message})`));
+    }
+  }
+
+  /** One scene event; resolves false when Gladys refused it. */
+  async function publishWarning(warning, update, language) {
+    const levelKey = WARNING_LEVEL_KEYS[warning.level - 1];
+    logger.info(`New warning: ${levelKey} ${warning.type}${update ? ' (level raised)' : ''}`);
+    try {
+      await gladys.publishSceneEvent(WARNING_TRIGGER, {
+        warning_type: warning.type,
+        level: levelKey,
+        level_number: warning.level,
+        type_label: WARNING_TYPE_NAMES[language][warning.type],
+        level_label: WARNING_LEVEL_NAMES[language][levelKey],
+        event: warning.event.slice(0, 200),
+        event_cs: warning.eventCs.slice(0, 200),
+        starts_at: formatWhen(warning.start, language, timeZone, now()),
+        ends_at: warning.end === null ? '' : formatWhen(warning.end, language, timeZone, now()),
+        in_force: warning.start <= now(),
+        is_update: update,
+        description: warning.description.slice(0, 1000),
+        instruction: warning.instruction.slice(0, 1000),
+        district: warnings.districtName,
+      });
+      return true;
+    } catch (err) {
+      logger.error(`Scene event refused, retried at the next refresh (${err.message})`);
+      return false;
     }
   }
 
@@ -383,19 +440,18 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
      * @returns {Promise<boolean>} whether a source answered
      */
     async cycle() {
-      if (!target) {
-        try {
-          await setup();
-        } catch (err) {
-          lastErrors.set('setup', err.message);
-          issues.fail('setup', `Setup failed (${err.message})`);
+      try {
+        await setup();
+        lastErrors.delete('setup');
+        issues.ok('setup', 'Setup done: ČHMÚ answers again');
+      } catch (err) {
+        lastErrors.set('setup', err.message);
+        issues.fail('setup', `Setup failed (${err.message})`);
+        // Without a target yet, nothing to read; otherwise keep the last one.
+        if (!target) {
           await reportStatus(false, TEXT.unreachable);
           return false;
         }
-        lastErrors.delete('setup');
-        issues.ok('setup', 'Setup done: ČHMÚ answers again');
-      } else if (metadata && now() - metadata.at >= METADATA_MAX_AGE) {
-        await loadMetadata().catch(() => {});
       }
       const { station, district, problem } = target;
       if (!station && !district) {
@@ -446,7 +502,10 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
       return {
         target,
         observation:
-          observation?.data.time && now() - observation.data.time < OBSERVATION_MAX_AGE
+          target?.station &&
+          observation?.key.startsWith(`${target.station.id}/`) &&
+          observation.data.time &&
+          now() - observation.data.time < OBSERVATION_MAX_AGE
             ? observation.data
             : null,
         warnings: warnings?.district === target?.district?.code ? warnings : null,
@@ -473,12 +532,14 @@ export function createService({ gladys, client, store, logger, getConfig, now, t
       };
     },
 
-    /** Read every source now (configuration action). */
-    async check() {
-      target = null;
+    /**
+     * Read every source now (configuration action).
+     * @param {() => Promise<void>} run one cycle, through the poller (one cycle at a time)
+     */
+    async check(run) {
       lastStatus = null;
       lastErrors.clear();
-      await this.cycle();
+      await run();
       return {
         target,
         observation: this.snapshot().observation,

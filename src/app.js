@@ -167,7 +167,9 @@ export function registerHandlers(gladys, options = {}) {
 
   gladys.onAction(ACTIONS.CHECK, async () => {
     logger.info('Action: check the connection');
-    const result = await service.check();
+    // After the cycle in progress, if any: its errors are not this check's.
+    await poller.idle;
+    const result = await service.check(() => poller.runNow());
     refreshWidget();
     return checkMessage(result, { now: now(), timeZone });
   });
@@ -177,6 +179,8 @@ export function registerHandlers(gladys, options = {}) {
   );
 
   async function start() {
+    // A cycle in progress reads with the old target: let it end first.
+    await poller.idle;
     service.reset();
     await poller.restart();
   }

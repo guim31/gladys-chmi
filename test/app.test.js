@@ -152,8 +152,9 @@ test('the first run only takes note of the warnings in force: no scene event', a
   const world = await createWorld();
   assert.equal(world.gladys.fake.sceneEvents.length, 0);
   const saved = await world.store.load();
-  assert.equal(saved.district, DISTRICT);
-  assert.deepEqual(Object.keys(saved.seen), ['wind']);
+  assert.equal(saved.version, 2);
+  assert.deepEqual(Object.keys(saved.seen), [DISTRICT]);
+  assert.deepEqual(Object.keys(saved.seen[DISTRICT]), ['wind']);
   await world.app.stop();
 });
 
@@ -214,6 +215,64 @@ test('a new warning fires once; extended or re-issued, it does not; a raised lev
     ],
     ['yellow', false],
   );
+  await world.app.stop();
+});
+
+test('a warning announced to start earlier than one already announced is a new episode', async () => {
+  const world = await createWorld();
+  const now = world.clock.now;
+  const late = { type: 'thunderstorm', level: 1, start: now + 20 * HOUR, end: now + 23 * HOUR };
+  issueCap(world.chmi, now, [late]);
+  await world.refresh(15);
+  assert.equal(world.gladys.fake.sceneEvents.length, 1);
+  const early = { type: 'thunderstorm', level: 1, start: now + 5 * HOUR, end: now + 7 * HOUR };
+  issueCap(world.chmi, world.clock.now, [early, late]);
+  await world.refresh(15);
+  assert.equal(world.gladys.fake.sceneEvents.length, 2, 'the earlier storm is announced too');
+  await world.refresh(15);
+  assert.equal(world.gladys.fake.sceneEvents.length, 2);
+  await world.app.stop();
+});
+
+test('a scene event Gladys refuses is sent again at the next refresh', async () => {
+  const world = await createWorld();
+  const now = world.clock.now;
+  issueCap(world.chmi, now, [{ type: 'rain', level: 2, start: now + HOUR, end: now + 5 * HOUR }]);
+  const publish = world.gladys.publishSceneEvent.bind(world.gladys);
+  world.gladys.publishSceneEvent = async () => {
+    throw new Error('Gladys unreachable');
+  };
+  await world.refresh(15);
+  assert.equal(world.gladys.fake.sceneEvents.length, 0);
+  assert.equal(world.logs.at('error').length, 1);
+  world.gladys.publishSceneEvent = publish;
+  await world.refresh(15);
+  assert.equal(world.gladys.fake.sceneEvents.length, 1);
+  assert.equal(world.gladys.fake.sceneEvents[0].data.warning_type, 'rain');
+  await world.app.stop();
+});
+
+test('a house placed on the map later clears "No location" at the next refresh', async () => {
+  const world = await createWorld({ houses: [{ ...HOUSE, latitude: null, longitude: null }] });
+  assert.match(world.gladys.fake.connectionStatus.message.en, /No location/);
+  assert.equal(world.gladys.fake.discoveredDevices.length, 0);
+  world.gladys.fake.houses = [HOUSE];
+  await world.refresh(15);
+  assert.equal(world.gladys.fake.discoveredDevices.length, 2);
+  assert.deepEqual(world.gladys.fake.connectionStatus, { connected: true });
+  // A house moved to Prague: the station and district follow.
+  world.gladys.fake.houses = [{ ...PRAGUE, selector: HOUSE.selector }];
+  await world.refresh(15);
+  assert.ok(
+    world.gladys.fake.discoveredDevices.some((d) => d.name === 'Alertes ČHMÚ, Hlavní město Praha'),
+  );
+  // Same place: devices are not published again, nothing logged at info.
+  const publications = () => world.gladys.fake.bodies('POST', '/discovered_device').length;
+  const published = publications();
+  const infos = world.logs.at('info').length;
+  await world.refresh(15);
+  assert.equal(publications(), published);
+  assert.equal(world.logs.at('info').length, infos);
   await world.app.stop();
 });
 
